@@ -9,7 +9,10 @@ export function useDataset() {
     rawData.map((city) => {
       const lines = city.lines.map((line) => {
         const stations = line.stations.map(station => ({ id: station.id, name: station.name, coord: transformGCJ02([station.lng, station.lat]) }))
-        const polyline = partialPolyline((line.fullPolyline.length ? line.fullPolyline.map(p => transformGCJ02(p as [number, number])) : extractPolyline(line.polyline)) as [number, number][], 3)
+        const rawPolyline = (line.fullPolyline.length ? line.fullPolyline.map(p => transformGCJ02(p as [number, number])) : extractPolyline(line.polyline)) as [number, number][]
+        // 站点级 polyline（点数与站点数相当）必须全量保留，否则线路会跨过中间车站；
+        // 仅对远密于站点的密集轨迹降采样以提升性能
+        const polyline = rawPolyline.length > line.stations.length * 2 ? partialPolyline(rawPolyline, 3) : rawPolyline
         return {
           id: line.id,
           cityId: city.id,
