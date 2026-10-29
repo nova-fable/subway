@@ -1,6 +1,6 @@
 import { acceptHMRUpdate, defineStore } from 'pinia'
-import type { City } from '~/types'
 import { useInteractorStore } from './interactor.store'
+import type { City } from '~/types'
 
 export const useAppStore = defineStore('app', () => {
   const dataset = useDataset()

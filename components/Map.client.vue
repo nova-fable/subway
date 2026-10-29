@@ -95,6 +95,13 @@ function zoomToLine(line: Line) {
     <CitySelect
       @on-zoom="zoomToCity"
       @city-select="zoomToCity"
+      @station-select="(hit) => {
+        mapRef?.flyTo({
+          center: hit.station.coord,
+          essential: true,
+          zoom: 14,
+        })
+      }"
     />
 
     <div class="ml-3">
