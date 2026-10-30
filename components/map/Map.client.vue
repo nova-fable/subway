@@ -4,12 +4,12 @@ import { storeToRefs } from 'pinia'
 import type { LayersList } from '@deck.gl/core/typed'
 import MapContainerClient from './MapContainer.client.vue'
 import type { City, Line } from '~/types'
-import { useAppStore } from '~/store/app.store'
+import { useAppStore } from '~/stores/app.store'
 import LineDetailLayer from '~/layers/line-detail.layer'
 import type { MapContainer } from '~/.nuxt/components'
 import LineLayer from '~/layers/lines.layer'
 import StationsLayer from '~/layers/stations.layer'
-import { useInteractorStore } from '~/store/interactor.store'
+import { useInteractorStore } from '~/stores/interactor.store'
 
 const mapRef = ref<InstanceType<typeof MapContainer> | null>(null)
 const selectorsRef = ref<HTMLDivElement>()

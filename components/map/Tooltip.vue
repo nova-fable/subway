@@ -1,6 +1,6 @@
 <script lang="ts" setup>
 import { storeToRefs } from 'pinia'
-import { useInteractorStore } from '~/store/interactor.store'
+import { useInteractorStore } from '~/stores/interactor.store'
 
 const { hoveringPosition, hoveringLine, hoveringStation } = storeToRefs(useInteractorStore())
 </script>

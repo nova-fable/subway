@@ -1,4 +1,3 @@
-import { geoDistance } from 'd3-geo'
 import hexRgb from 'hex-rgb'
 import first from 'lodash-es/first'
 import rawData from '~/datasource/data.json'
@@ -88,81 +87,4 @@ function partialPolyline(polyline: [number, number][], step: number) {
   })
 
   return [...newPolyline, polyline[polyline.length - 1]]
-}
-
-/**
- * 起点/终点为换乘站的时候，polyline可能没有衔接到地铁站，手动修复一下
- */
-function correctPolyline(polyline: [number, number][], stations: Station[]): [number, number][] {
-  if (stations.length === 0 || polyline.length === 0)
-    return polyline
-
-  const firstStationCoord = stations[0].coord
-  const lastStationCoord = stations[stations.length - 1].coord
-  const polylineStart = polyline[0]
-  const polylineEnd = polyline[polyline.length - 1]
-
-  if (!firstStationCoord || !lastStationCoord || !polylineStart || !polylineEnd)
-    return polyline
-
-  const distancePolylineStartFirstStation = getDistance(polyline[0], firstStationCoord)
-  const distancePolylineEndLastStation = getDistance(polyline[polyline.length - 1], lastStationCoord)
-
-  const distancePolylineStartLastStation = getDistance(polyline[0], lastStationCoord)
-  const distancePolylineEndFirstStation = getDistance(polyline[polyline.length - 1], firstStationCoord)
-
-  if (distancePolylineStartFirstStation + distancePolylineEndLastStation < distancePolylineStartLastStation + distancePolylineEndFirstStation) {
-    // polyline 和 stations 的方向一致
-    polyline[0] = firstStationCoord
-    polyline[polyline.length - 1] = lastStationCoord
-  }
-  else {
-    // polyline 和 stations 的方向不一致
-    polyline.reverse()
-    polyline[0] = firstStationCoord
-    polyline[polyline.length - 1] = lastStationCoord
-  }
-
-  return polyline
-}
-
-function correctStations(polyline: [number, number][], stations: Station[]): Station[] {
-  if (stations.length === 0 || polyline.length === 0)
-    return stations
-
-  const firstStationCoord = stations[0].coord
-  const lastStationCoord = stations[stations.length - 1].coord
-  const polylineStart = polyline[0]
-  const polylineEnd = polyline[polyline.length - 1]
-
-  if (!firstStationCoord || !lastStationCoord || !polylineStart || !polylineEnd)
-    return stations
-
-  const distancePolylineStartFirstStation = getDistance(polyline[0], firstStationCoord)
-  const distancePolylineEndLastStation = getDistance(polyline[polyline.length - 1], lastStationCoord)
-
-  const distancePolylineStartLastStation = getDistance(polyline[0], lastStationCoord)
-  const distancePolylineEndFirstStation = getDistance(polyline[polyline.length - 1], firstStationCoord)
-
-  const correctedStations = [...stations]
-
-  if (distancePolylineStartFirstStation + distancePolylineEndLastStation < distancePolylineStartLastStation + distancePolylineEndFirstStation) {
-    // polyline 和 stations 的方向一致
-    correctedStations[0].coord = polylineStart
-    correctedStations[correctedStations.length - 1].coord = polylineEnd
-  }
-  else {
-    // polyline 和 stations 的方向不一致
-    correctedStations.reverse()
-    correctedStations[0].coord = polylineEnd
-    correctedStations[correctedStations.length - 1].coord = polylineStart
-  }
-
-  return correctedStations
-}
-
-function getDistance(coord1: [number, number], coord2: [number, number]): number {
-  const distanceInRadians = geoDistance(coord1, coord2)
-  const distanceInKilometers = distanceInRadians * 6371 // 地球半径大约是 6371 千米
-  return distanceInKilometers
 }

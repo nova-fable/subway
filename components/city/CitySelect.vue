@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
 import { List, MapPin, MapPinOff, Search } from 'lucide-vue-next'
-import { useAppStore } from '~/store/app.store'
+import { useAppStore } from '~/stores/app.store'
 import type { City, Line, Station } from '~/types'
 
 interface StationHit {
@@ -13,7 +13,6 @@ interface StationHit {
 
 const emits = defineEmits<{
   (e: 'city-select', city: City): void
-  (e: 'city-unselect', city: City): void
   (e: 'on-zoom', city: City): void
   (e: 'stationSelect', hit: StationHit): void
 }>()
@@ -61,15 +60,6 @@ function selectStation(hit: StationHit) {
   setActiveCity(hit.city)
   emits('stationSelect', hit)
 }
-
-const totalLines = computed(() => dataset.value.reduce((n, city) => n + city.lines.length, 0))
-const totalStations = computed(() => dataset.value.reduce((n, city) => n + city.lines.reduce((m, line) => m + line.stations.length, 0), 0))
-
-const config = useRuntimeConfig()
-const updatedAt = computed(() => {
-  const time = new Date(config.public.DATA_UPDATED_AT as unknown as string)
-  return Number.isNaN(time.getTime()) ? '' : `数据更新于 ${time.toISOString().slice(0, 10)}`
-})
 </script>
 
 <template>
@@ -126,7 +116,6 @@ const updatedAt = computed(() => {
             <span
               class="cursor-pointer" @click.stop="() => {
                 toggleCity(city)
-                emits('city-unselect', city)
               }"
             >
               <MapPin v-if="isCityActive(city)" class="text-blue-500 hover:scale-125 transition-transform" :size="12" />
@@ -136,10 +125,5 @@ const updatedAt = computed(() => {
         </li>
       </ul>
     </section>
-
-    <footer class="pt-1.5 mt-1 border-t border-zinc-100 flex justify-between items-center text-[10px] text-zinc-400 select-none">
-      <span>{{ dataset.length }} 城 · {{ totalLines }} 线 · {{ totalStations }} 站</span>
-      <span v-if="updatedAt">{{ updatedAt }}</span>
-    </footer>
   </div>
 </template>

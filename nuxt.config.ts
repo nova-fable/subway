@@ -2,16 +2,22 @@ import { statSync } from 'node:fs'
 import { join } from 'node:path'
 
 export default defineNuxtConfig({
+  devServer: {
+    port: 4321,
+  },
+
   runtimeConfig: {
     public: {
-      MAP_BOX_TOKEN: process.env.MAP_BOX_TOKEN,
       MAP_URL: process.env.MAP_URL,
       DATA_UPDATED_AT: statSync(join(__dirname, './datasource/data.json')).mtime,
     },
   },
 
+  components: [
+    { path: '~/components', pathPrefix: false },
+  ],
+
   modules: [
-    '@vueuse/nuxt',
     '@pinia/nuxt',
     '@nuxtjs/color-mode',
     '@nuxthq/ui',
@@ -60,13 +66,6 @@ export default defineNuxtConfig({
       meta: [
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
         { name: 'apple-mobile-web-app-status-bar-style', content: 'black-translucent' },
-      ],
-      script: [
-        {
-          'defer': true,
-          'data-website-id': 'a98914db-8947-4a51-9ea1-52acf9d2159e',
-          'src': 'https://umami.cuvii.dev/script.js',
-        },
       ],
     },
   },

@@ -2,9 +2,9 @@
 import { storeToRefs } from 'pinia'
 import { X } from 'lucide-vue-next'
 import { Motion, Presence } from '@oku-ui/motion'
-import { useAppStore } from '~/store/app.store'
+import { useAppStore } from '~/stores/app.store'
 import type { Line } from '~/types'
-import { useInteractorStore } from '~/store/interactor.store'
+import { useInteractorStore } from '~/stores/interactor.store'
 
 const emits = defineEmits<{
   (e: 'line-select', line: Line): void

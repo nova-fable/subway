@@ -1,1 +1,1 @@
-export const appName = 'Subway | cuvii.dev'
+export const appName = 'Subway | zxinrun.cn'

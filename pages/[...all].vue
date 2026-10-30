@@ -7,10 +7,10 @@ const router = useRouter()
     <div text-4xl>
       <div i-carbon-warning inline-block />
     </div>
-    <div>Not found</div>
+    <div>页面不存在</div>
     <div>
       <button text-sm btn m="3 t8" @click="router.back()">
-        Back
+        返回
       </button>
     </div>
   </main>

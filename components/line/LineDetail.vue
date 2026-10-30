@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
 import { Motion, Presence } from '@oku-ui/motion'
-import { useInteractorStore } from '~/store/interactor.store'
+import { useInteractorStore } from '~/stores/interactor.store'
 import type { Station } from '~/types'
 
 const emits = defineEmits<{

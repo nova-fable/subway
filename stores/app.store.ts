@@ -45,20 +45,6 @@ export const useAppStore = defineStore('app', () => {
     pinnedCities.value.delete(city)
   }
 
-  const deselectCity = (city: City) => {
-    if (isCityPinned(city))
-      unpinCity(city)
-    if (isCityActive(city))
-      activeCities.value.delete(city)
-
-    const { focusedLine, setFocusedLine } = useInteractorStore()
-    if (focusedLine?.cityId === city.id)
-      setFocusedLine(null)
-
-    if (detailCity.value === city)
-      detailCity.value = null
-  }
-
   const toggleCity = (city: City) => {
     if (isCityPinned(city)) {
       unpinCity(city)
@@ -97,7 +83,6 @@ export const useAppStore = defineStore('app', () => {
     setDetailCity,
     pinCity,
     unpinCity,
-    deselectCity,
     setAsOnlyActiveCity,
     setActiveCity,
   }

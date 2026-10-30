@@ -3,6 +3,9 @@ import { appName } from '~/constants'
 
 useHead({
   title: appName,
+  htmlAttrs: {
+    lang: 'zh-CN',
+  },
 })
 </script>
 
