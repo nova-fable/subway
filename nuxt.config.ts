@@ -1,7 +1,20 @@
-import { statSync } from 'node:fs'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
+function readDataManifest() {
+  try {
+    return JSON.parse(readFileSync(join(__dirname, 'data/manifest.json'), 'utf8'))
+  }
+  catch {
+    return null
+  }
+}
+
+const dataManifest = readDataManifest()
+
 export default defineNuxtConfig({
+  srcDir: 'app',
+
   devServer: {
     port: 4321,
   },
@@ -9,7 +22,8 @@ export default defineNuxtConfig({
   runtimeConfig: {
     public: {
       MAP_URL: process.env.MAP_URL,
-      DATA_UPDATED_AT: statSync(join(__dirname, './datasource/data.json')).mtime,
+      DATA_UPDATED_AT: dataManifest ? new Date(dataManifest.updatedAt).getTime() : 0,
+      DATA_VERSION: dataManifest?.version ?? 'dev',
     },
   },
 
@@ -35,6 +49,9 @@ export default defineNuxtConfig({
   },
 
   nitro: {
+    publicAssets: [
+      { dir: join(__dirname, 'data'), baseURL: '/data' },
+    ],
     esbuild: {
       options: {
         target: 'esnext',

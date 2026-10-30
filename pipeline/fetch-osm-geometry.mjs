@@ -1,0 +1,326 @@
+#!/usr/bin/env node
+/**
+ * 用 OpenStreetMap 的真实线路几何替换 pipeline/raw/data.json 中由站点直线连接的 fullPolyline。
+ *
+ * 用法:
+ *   pnpm data:osm                  # 全部城市
+ *   pnpm data:osm -- --cities=深圳,广州
+ *   pnpm data:osm -- --force       # 忽略缓存重新请求 Overpass
+ *
+ * 数据来源: OpenStreetMap route=subway 关系（ODbL）
+ */
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+import gcoord from 'gcoord'
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const DATA_FILE = path.join(__dirname, 'raw/data.json')
+const CACHE_DIR = path.join(__dirname, '.cache/osm')
+const OVERPASS_URL = process.env.OVERPASS_URL || 'https://overpass-api.de/api/interpreter'
+const USER_AGENT = 'subway-map-osm-enrich/1.0 (https://github.com/nova-fable/subway)'
+const BBOX_BUFFER = 0.15
+const MATCH_RADIUS = 300
+const SIMPLIFY_TOLERANCE = 0.00005
+
+const args = process.argv.slice(2)
+const force = args.includes('--force')
+const citiesArg = args.find(arg => arg.startsWith('--cities='))
+const onlyCities = citiesArg ? new Set(citiesArg.slice('--cities='.length).split(',').map(s => s.trim()).filter(Boolean)) : null
+
+function toRadians(value) {
+  return value * Math.PI / 180
+}
+
+function distanceMeters(a, b) {
+  const lat = toRadians((a[1] + b[1]) / 2)
+  const dx = (a[0] - b[0]) * 111320 * Math.cos(lat)
+  const dy = (a[1] - b[1]) * 110540
+  return Math.hypot(dx, dy)
+}
+
+function pointSegmentDistance(point, start, end) {
+  const lat = toRadians((start[1] + end[1]) / 2)
+  const scaleX = 111320 * Math.cos(lat)
+  const scaleY = 110540
+  const px = point[0] * scaleX
+  const py = point[1] * scaleY
+  const ax = start[0] * scaleX
+  const ay = start[1] * scaleY
+  const bx = end[0] * scaleX
+  const by = end[1] * scaleY
+  const dx = bx - ax
+  const dy = by - ay
+  const lengthSquared = dx * dx + dy * dy
+
+  if (lengthSquared === 0)
+    return Math.hypot(px - ax, py - ay)
+
+  const t = Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lengthSquared))
+  return Math.hypot(px - (ax + t * dx), py - (ay + t * dy))
+}
+
+function nearestDistanceToPath(point, path) {
+  let min = Infinity
+  for (let i = 0; i < path.length - 1; i++)
+    min = Math.min(min, pointSegmentDistance(point, path[i], path[i + 1]))
+  return min
+}
+
+function getCityBounds(city) {
+  let minLng = Infinity
+  let minLat = Infinity
+  let maxLng = -Infinity
+  let maxLat = -Infinity
+
+  for (const line of city.lines) {
+    for (const station of line.stations) {
+      const [lng, lat] = gcoord.transform([station.lng, station.lat], gcoord.GCJ02, gcoord.WGS84)
+      minLng = Math.min(minLng, lng)
+      minLat = Math.min(minLat, lat)
+      maxLng = Math.max(maxLng, lng)
+      maxLat = Math.max(maxLat, lat)
+    }
+  }
+
+  return [minLat - BBOX_BUFFER, minLng - BBOX_BUFFER, maxLat + BBOX_BUFFER, maxLng + BBOX_BUFFER]
+}
+
+async function fetchOverpass(city) {
+  const cacheFile = path.join(CACHE_DIR, `${city.id}.json`)
+  if (!force) {
+    try {
+      return JSON.parse(await readFile(cacheFile, 'utf8'))
+    }
+    catch {}
+  }
+
+  const [south, west, north, east] = getCityBounds(city)
+  const query = `[out:json][timeout:90];relation(${south},${west},${north},${east})["route"~"^(subway|light_rail|monorail)$"];out geom;`
+
+  let lastError
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const response = await fetch(OVERPASS_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'User-Agent': USER_AGENT,
+        },
+        body: new URLSearchParams({ data: query }),
+      })
+
+      if (!response.ok)
+        throw new Error(`HTTP ${response.status}`)
+
+      const text = await response.text()
+      const data = JSON.parse(text)
+      await mkdir(CACHE_DIR, { recursive: true })
+      await writeFile(cacheFile, text)
+      return data
+    }
+    catch (error) {
+      lastError = error
+      await new Promise(resolve => setTimeout(resolve, attempt * 3000))
+    }
+  }
+
+  throw new Error(`Overpass 请求失败: ${lastError?.message}`)
+}
+
+function assemblePath(relation) {
+  const ways = relation.members
+    .filter(member => member.type === 'way' && (!member.role || member.role === '') && member.geometry?.length > 1)
+    .map(member => member.geometry.map(point => [point.lon, point.lat]))
+
+  if (!ways.length)
+    return []
+
+  let path = ways[0].slice()
+
+  for (let i = 1; i < ways.length; i++) {
+    let way = ways[i]
+    const distanceToStart = distanceMeters(path[path.length - 1], way[0])
+    const distanceToEnd = distanceMeters(path[path.length - 1], way[way.length - 1])
+
+    if (distanceToEnd < distanceToStart)
+      way = way.slice().reverse()
+
+    path = path.concat(way.slice(1))
+  }
+
+  return path.filter((point, index) => {
+    if (index === 0)
+      return true
+    return point[0] !== path[index - 1][0] || point[1] !== path[index - 1][1]
+  })
+}
+
+function simplifyPath(points, tolerance) {
+  if (points.length <= 2)
+    return points
+
+  const squaredTolerance = tolerance * tolerance
+  const simplified = [points[0]]
+
+  function getSquaredDistance(point, start, end) {
+    let x = start[0]
+    let y = start[1]
+    let dx = end[0] - x
+    let dy = end[1] - y
+
+    if (dx !== 0 || dy !== 0) {
+      const t = ((point[0] - x) * dx + (point[1] - y) * dy) / (dx * dx + dy * dy)
+      if (t > 1) {
+        x = end[0]
+        y = end[1]
+      }
+      else if (t > 0) {
+        x += dx * t
+        y += dy * t
+      }
+    }
+
+    dx = point[0] - x
+    dy = point[1] - y
+    return dx * dx + dy * dy
+  }
+
+  function step(first, last) {
+    let maxSquaredDistance = squaredTolerance
+    let index = -1
+
+    for (let i = first + 1; i < last; i++) {
+      const squaredDistance = getSquaredDistance(points[i], points[first], points[last])
+      if (squaredDistance > maxSquaredDistance) {
+        index = i
+        maxSquaredDistance = squaredDistance
+      }
+    }
+
+    if (index === -1)
+      return
+
+    step(first, index)
+    simplified.push(points[index])
+    step(index, last)
+  }
+
+  step(0, points.length - 1)
+  simplified.push(points[points.length - 1])
+  return simplified
+}
+
+function normalizeRef(value) {
+  return String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+}
+
+function extractLineRef(name) {
+  const match = String(name || '').match(/[A-Za-z]*\d+[A-Za-z]*/)
+  return match ? normalizeRef(match[0]) : ''
+}
+
+function scoreRelation(relation, path, stations, line) {
+  const matchedStations = stations.filter(station => nearestDistanceToPath(station, path) <= MATCH_RADIUS).length
+  const stationCoverage = stations.length ? matchedStations / stations.length : 0
+
+  const stops = relation.members
+    .filter(member => member.type === 'node' && member.role?.includes('stop') && member.lat != null && member.lon != null)
+    .map(member => [member.lon, member.lat])
+
+  const matchedStops = stops.filter(stop => stations.some(station => distanceMeters(station, stop) <= MATCH_RADIUS)).length
+  const stopCoverage = stops.length ? matchedStops / stops.length : 0
+
+  const relationRefs = [relation.tags.ref, relation.tags.name, relation.tags['name:zh'], relation.tags['name:en']]
+    .map(normalizeRef)
+    .filter(Boolean)
+  const lineRef = extractLineRef(line.name)
+  const refMatched = !!lineRef && relationRefs.some(ref => ref.includes(lineRef) || lineRef.includes(ref))
+
+  return {
+    score: stationCoverage * 1.5 + stopCoverage + (refMatched ? 0.4 : 0),
+    stationCoverage,
+    stopCoverage,
+    refMatched,
+  }
+}
+
+function encodePolyline(points) {
+  const coordinates = [points[0][1], points[0][0]]
+  for (let i = 1; i < points.length; i++) {
+    coordinates.push(Math.round((points[i][1] - points[i - 1][1]) * 1e6))
+    coordinates.push(Math.round((points[i][0] - points[i - 1][0]) * 1e6))
+  }
+  return coordinates
+}
+
+async function main() {
+  const dataset = JSON.parse(await readFile(DATA_FILE, 'utf8'))
+  const cities = onlyCities ? dataset.filter(city => onlyCities.has(city.name) || onlyCities.has(city.id)) : dataset
+
+  let enriched = 0
+  let skipped = 0
+
+  for (const city of cities) {
+    let relations
+    try {
+      const data = await fetchOverpass(city)
+      relations = data.elements || []
+    }
+    catch (error) {
+      console.warn(`[${city.name}] ${error.message}`)
+      skipped += city.lines.length
+      continue
+    }
+
+    const candidates = relations
+      .map(relation => {
+        const path = assemblePath(relation)
+        return path.length > 1 ? { relation, path } : null
+      })
+      .filter(Boolean)
+
+    for (const line of city.lines) {
+      const stations = line.stations.map(station => {
+        const [lng, lat] = gcoord.transform([station.lng, station.lat], gcoord.GCJ02, gcoord.WGS84)
+        return [lng, lat]
+      })
+
+      let best = null
+      for (const candidate of candidates) {
+        const result = scoreRelation(candidate.relation, candidate.path, stations, line)
+        if (!best || result.score > best.result.score)
+          best = { ...candidate, result }
+      }
+
+      if (!best || (best.result.stationCoverage < 0.45 && !(best.result.refMatched && best.result.stationCoverage >= 0.3))) {
+        skipped++
+        continue
+      }
+
+      const simplified = simplifyPath(best.path, SIMPLIFY_TOLERANCE)
+      if (simplified.length < 2) {
+        skipped++
+        continue
+      }
+
+      const gcj02 = simplified.map(([lng, lat]) => gcoord.transform([lng, lat], gcoord.WGS84, gcoord.GCJ02))
+      line.fullPolyline = gcj02
+      line.polyline = encodePolyline(gcj02)
+      enriched++
+
+      const coverage = Math.round(best.result.stationCoverage * 100)
+      console.log(`[${city.name}] ${line.name} <- OSM ${best.relation.id} (站点覆盖 ${coverage}%, ${simplified.length} 点)`)
+    }
+
+    await writeFile(DATA_FILE, `${JSON.stringify(dataset, null, 2)}\n`)
+  }
+
+  await writeFile(DATA_FILE, `${JSON.stringify(dataset, null, 2)}\n`)
+  console.log(`\n完成: 更新 ${enriched} 条线路，跳过 ${skipped} 条（保留原有平滑兜底）`)
+}
+
+main().catch((error) => {
+  console.error(error)
+  process.exit(1)
+})

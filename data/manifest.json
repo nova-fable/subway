@@ -1,0 +1,15 @@
+{
+  "version": "1b05d6de7058",
+  "updatedAt": "2026-10-30T07:04:39.886Z",
+  "counts": {
+    "cities": 58,
+    "lines": 398,
+    "stations": 8530
+  },
+  "defaultCityIds": [
+    "4401",
+    "4403",
+    "8100",
+    "4419"
+  ]
+}

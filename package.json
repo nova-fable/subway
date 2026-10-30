@@ -2,15 +2,17 @@
   "private": true,
   "packageManager": "pnpm@8.15.4",
   "scripts": {
-    "build": "nuxi build",
-    "dev": "nuxi dev --dotenv .env.local",
+    "build": "node ./pipeline/build-data.mjs && nuxi build",
+    "dev": "node ./pipeline/build-data.mjs && nuxi dev --dotenv .env.local",
     "start": "node .output/server/index.mjs",
     "typecheck": "vue-tsc --noEmit",
     "lint": "eslint .",
     "postinstall": "nuxi prepare",
-    "generate": "nuxi generate",
+    "generate": "node ./pipeline/build-data.mjs && nuxi generate",
     "start:generate": "npx serve .output/public",
-    "data:fetch": "node ./scripts/fetch-metro-data.mjs"
+    "data:build": "node ./pipeline/build-data.mjs",
+    "data:fetch": "node ./pipeline/fetch-metro-data.mjs && node ./pipeline/build-data.mjs",
+    "data:osm": "node ./pipeline/fetch-osm-geometry.mjs && node ./pipeline/build-data.mjs"
   },
   "dependencies": {
     "@deck.gl/core": "^8.9.35",

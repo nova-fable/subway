@@ -35,6 +35,15 @@
 - **构建工具**: Vite
 
 
+## 项目结构
+
+```text
+app/        运行时源码（Nuxt srcDir：组件、页面、store、图层、类型）
+data/       构建后的数据集（城市目录、搜索索引、按城市分片）
+pipeline/   数据抓取与构建脚本（原始数据在 pipeline/raw）
+public/     静态资源
+```
+
 ## 数据说明
 
 - 📊 **数据来源**: [高德地图地铁图](https://map.amap.com/subway)（GCJ02 坐标系，渲染时转换为 WGS84）
@@ -50,7 +59,19 @@
 pnpm data:fetch
 ```
 
-脚本输出 `datasource/data.json`，包含城市 → 线路 → 站点三级结构与线路走向 polyline，并附带数据校验（坐标范围、颜色格式、新旧数据对比）。
+原始数据写入 `pipeline/raw/data.json`。随后可用 OSM 真实线路几何覆盖直线连接：
+
+```bash
+pnpm data:osm
+```
+
+最后切分为前端按需加载的数据集：
+
+```bash
+pnpm data:build
+```
+
+产物位于 `data/`：`manifest.json`（版本与统计）、`cities.json`（城市目录）、`search.json`（站点搜索索引）、`cities/{adcode}.json`（单城线路与站点）。前端首屏只加载城市目录与默认城市，其余城市在选中时按需请求。
 
 ## 许可证
 

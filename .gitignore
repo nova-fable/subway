@@ -8,4 +8,4 @@ dist
 .vercel
 .env*.local
 .DS_Store
-scripts/.cache
+pipeline/.cache

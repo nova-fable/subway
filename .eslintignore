@@ -1,0 +1,5 @@
+data
+pipeline/raw
+pipeline/.cache
+.nuxt
+.output
