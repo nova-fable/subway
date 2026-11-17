@@ -28,6 +28,7 @@ const USER_AGENT = 'subway-map-osm-enrich/1.0 (https://github.com/nova-fable/sub
 const BBOX_BUFFER = 0.15
 const MATCH_RADIUS = 300
 const SIMPLIFY_TOLERANCE = 0.00005
+const MAX_PATH_GAP = 500
 const REQUEST_INTERVAL_MS = Math.max(0, envNumber('OVERPASS_REQUEST_INTERVAL_MS', 1500))
 
 let lastRequestAt = 0
@@ -179,6 +180,89 @@ function assemblePath(relation) {
   })
 }
 
+function maxGap(points) {
+  let longest = 0
+  for (let i = 1; i < points.length; i++)
+    longest = Math.max(longest, distanceMeters(points[i - 1], points[i]))
+  return longest
+}
+
+function pathLength(points) {
+  let total = 0
+  for (let i = 1; i < points.length; i++)
+    total += distanceMeters(points[i - 1], points[i])
+  return total
+}
+
+function splitPathSegments(path) {
+  const segments = []
+  let segment = []
+
+  for (const point of path) {
+    if (segment.length && distanceMeters(segment[segment.length - 1], point) > MAX_PATH_GAP) {
+      if (segment.length > 1)
+        segments.push(segment)
+      segment = [point]
+    }
+    else {
+      segment.push(point)
+    }
+  }
+
+  if (segment.length > 1)
+    segments.push(segment)
+  return segments
+}
+
+function connectPathSegments(segments) {
+  if (segments.length <= 1)
+    return segments[0] ?? []
+
+  let startIndex = 0
+  let longest = -1
+  segments.forEach((segment, index) => {
+    const length = pathLength(segment)
+    if (length > longest) {
+      longest = length
+      startIndex = index
+    }
+  })
+
+  const remaining = segments.filter((_, index) => index !== startIndex)
+  let chain = segments[startIndex]
+
+  while (remaining.length) {
+    const chainStart = chain[0]
+    const chainEnd = chain[chain.length - 1]
+    let best = null
+
+    remaining.forEach((segment, index) => {
+      const options = [
+        { distance: distanceMeters(chainEnd, segment[0]), index, mode: 'append' },
+        { distance: distanceMeters(chainEnd, segment[segment.length - 1]), index, mode: 'append-reverse' },
+        { distance: distanceMeters(chainStart, segment[segment.length - 1]), index, mode: 'prepend' },
+        { distance: distanceMeters(chainStart, segment[0]), index, mode: 'prepend-reverse' },
+      ]
+      for (const option of options) {
+        if (!best || option.distance < best.distance)
+          best = option
+      }
+    })
+
+    const segment = remaining.splice(best.index, 1)[0]
+    if (best.mode === 'append')
+      chain = chain.concat(segment.slice(1))
+    else if (best.mode === 'append-reverse')
+      chain = chain.concat(segment.slice().reverse().slice(1))
+    else if (best.mode === 'prepend')
+      chain = segment.slice(0, -1).concat(chain)
+    else
+      chain = segment.slice().reverse().slice(0, -1).concat(chain)
+  }
+
+  return chain
+}
+
 function simplifyPath(points, tolerance) {
   if (points.length <= 2)
     return points
@@ -299,8 +383,14 @@ async function main() {
 
     const candidates = relations
       .map(relation => {
-        const path = assemblePath(relation)
-        return path.length > 1 ? { relation, path } : null
+        const rawPath = assemblePath(relation)
+        const connected = connectPathSegments(splitPathSegments(rawPath))
+        const rawSimplified = simplifyPath(rawPath, SIMPLIFY_TOLERANCE)
+        const connectedSimplified = simplifyPath(connected, SIMPLIFY_TOLERANCE)
+        const useConnected = maxGap(connectedSimplified) <= maxGap(rawSimplified)
+        const path = useConnected ? connected : rawPath
+        const simplified = useConnected ? connectedSimplified : rawSimplified
+        return path.length > 1 ? { relation, rawPath, path, simplified } : null
       })
       .filter(Boolean)
 
@@ -312,7 +402,7 @@ async function main() {
 
       let best = null
       for (const candidate of candidates) {
-        const result = scoreRelation(candidate.relation, candidate.path, stations, line)
+        const result = scoreRelation(candidate.relation, candidate.rawPath, stations, line)
         if (!best || result.score > best.result.score)
           best = { ...candidate, result }
       }
@@ -322,7 +412,7 @@ async function main() {
         continue
       }
 
-      const simplified = simplifyPath(best.path, SIMPLIFY_TOLERANCE)
+      const simplified = best.simplified
       if (simplified.length < 2) {
         skipped++
         continue
