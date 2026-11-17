@@ -99,13 +99,13 @@ async function selectCity(city: City) {
 </script>
 
 <template>
-  <div class=" bg-white rounded text-zinc-800 text-xs p-2 pb-2 flex flex-col flex-1 max-h-full">
+  <div class="w-36 shrink-0 bg-white rounded text-zinc-800 text-xs p-2 pb-2 flex flex-col max-h-full">
     <SocialLinks />
 
     <div class="relative mb-1">
       <input
         v-model="searchQuery"
-        placeholder="搜索地铁站，如 国贸"
+        placeholder="搜索站点，如国贸"
         class="w-full bg-zinc-100 rounded px-2 py-1 pr-6 text-xs text-zinc-600 placeholder:text-zinc-300 outline-none focus:bg-zinc-50"
         @keydown.enter.prevent="stationHits[0] && selectStation(stationHits[0])"
       >
@@ -113,15 +113,15 @@ async function selectCity(city: City) {
 
       <ul
         v-if="stationHits.length"
-        class="absolute z-10 left-0 right-0 mt-1 bg-white rounded shadow-lg border border-zinc-100 overflow-hidden"
+        class="absolute z-10 left-0 mt-1 bg-white rounded shadow-lg border border-zinc-100 overflow-hidden w-max min-w-full max-w-[calc(100vw-2rem)]"
       >
         <li
           v-for="hit in stationHits" :key="`${hit.city.id}-${hit.entry.name}`"
-          class="px-2 py-1 flex items-center gap-1 cursor-pointer hover:bg-zinc-50"
+          class="px-2 py-1 flex items-center gap-1 cursor-pointer hover:bg-zinc-50 whitespace-nowrap"
           @mousedown.prevent="() => selectStation(hit)"
         >
           <span class="h-1.5 w-1.5 rounded-full shrink-0" :style="{ background: `#${hit.entry.color}` }" />
-          <span class="text-zinc-700">{{ hit.entry.name }}</span>
+          <span class="text-zinc-700 shrink-0">{{ hit.entry.name }}</span>
           <span class="text-zinc-400 truncate">{{ hit.city.name }} · {{ hit.entry.lines.join('/') }}</span>
         </li>
       </ul>
