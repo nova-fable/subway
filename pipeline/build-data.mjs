@@ -13,7 +13,7 @@
 import { createHash } from 'node:crypto'
 import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.join(__dirname, '..')
@@ -88,7 +88,7 @@ async function writeJson(file, value, pretty = false) {
   await writeFile(file, `${JSON.stringify(value, null, pretty ? 2 : 0)}\n`)
 }
 
-async function main() {
+export async function buildData() {
   const source = await readFile(SOURCE, 'utf8')
   const cities = JSON.parse(source)
   const sourceStat = await stat(SOURCE)
@@ -123,7 +123,9 @@ async function main() {
   console.log(`输出目录 ${path.relative(ROOT, OUTPUT_DIR)}`)
 }
 
-main().catch((error) => {
-  console.error(error)
-  process.exit(1)
-})
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  buildData().catch((error) => {
+    console.error(error)
+    process.exit(1)
+  })
+}

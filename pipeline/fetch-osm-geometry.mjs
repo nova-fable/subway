@@ -13,6 +13,12 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import gcoord from 'gcoord'
+import { buildData } from './build-data.mjs'
+
+function envNumber(name, fallback) {
+  const value = Number(process.env[name])
+  return Number.isFinite(value) ? value : fallback
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DATA_FILE = path.join(__dirname, 'raw/data.json')
@@ -22,6 +28,16 @@ const USER_AGENT = 'subway-map-osm-enrich/1.0 (https://github.com/nova-fable/sub
 const BBOX_BUFFER = 0.15
 const MATCH_RADIUS = 300
 const SIMPLIFY_TOLERANCE = 0.00005
+const REQUEST_INTERVAL_MS = Math.max(0, envNumber('OVERPASS_REQUEST_INTERVAL_MS', 1500))
+
+let lastRequestAt = 0
+
+async function waitForRequestSlot() {
+  const wait = lastRequestAt + REQUEST_INTERVAL_MS - Date.now()
+  if (wait > 0)
+    await new Promise(resolve => setTimeout(resolve, wait))
+  lastRequestAt = Date.now()
+}
 
 const args = process.argv.slice(2)
 const force = args.includes('--force')
@@ -101,6 +117,7 @@ async function fetchOverpass(city) {
   let lastError
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
+      await waitForRequestSlot()
       const response = await fetch(OVERPASS_URL, {
         method: 'POST',
         headers: {
@@ -110,8 +127,14 @@ async function fetchOverpass(city) {
         body: new URLSearchParams({ data: query }),
       })
 
-      if (!response.ok)
+      if (!response.ok) {
+        if (response.status === 429) {
+          const retryAfter = Number(response.headers.get('retry-after'))
+          if (retryAfter > 0)
+            await new Promise(resolve => setTimeout(resolve, retryAfter * 1000))
+        }
         throw new Error(`HTTP ${response.status}`)
+      }
 
       const text = await response.text()
       const data = JSON.parse(text)
@@ -255,6 +278,7 @@ function encodePolyline(points) {
 }
 
 async function main() {
+  console.log(`Overpass 请求策略: 串行、间隔 ${REQUEST_INTERVAL_MS}ms，缓存命中时不请求`)
   const dataset = JSON.parse(await readFile(DATA_FILE, 'utf8'))
   const cities = onlyCities ? dataset.filter(city => onlyCities.has(city.name) || onlyCities.has(city.id)) : dataset
 
@@ -318,6 +342,8 @@ async function main() {
 
   await writeFile(DATA_FILE, `${JSON.stringify(dataset, null, 2)}\n`)
   console.log(`\n完成: 更新 ${enriched} 条线路，跳过 ${skipped} 条（保留原有平滑兜底）`)
+
+  await buildData()
 }
 
 main().catch((error) => {

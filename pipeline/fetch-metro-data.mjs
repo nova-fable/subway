@@ -12,21 +12,42 @@
  *   - 支线在高德数据中表现为同名多条线路记录（li 以 | 分隔多个子线路 id），保持原样
  *   - 线路 id 取 li 的第一段；站点顺序即线路走向，polyline 由站点坐标连线生成
  *
- * 用法: pnpm data:fetch
+ * 用法:
+ *   pnpm data:fetch               # 抓取全部城市并重建 data/
+ *   pnpm data:fetch:city 4401     # 仅抓取单城原始数据，保存到 pipeline/raw/cities/
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { buildData } from './build-data.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.join(__dirname, '..')
 const CACHE_DIR = path.join(__dirname, '.cache')
 const OUTPUT = path.join(__dirname, 'raw/data.json')
+const RAW_CITIES_DIR = path.join(__dirname, 'raw/cities')
+
+function envNumber(name, fallback) {
+  const value = Number(process.env[name])
+  return Number.isFinite(value) ? value : fallback
+}
 
 const ENDPOINT = 'https://map.amap.com/service/subway'
 const HEADERS = {
   'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   Referer: 'https://map.amap.com/subway/index.html',
+}
+const FETCH_CONCURRENCY = Math.max(1, envNumber('AMAP_CONCURRENCY', 2))
+const REQUEST_INTERVAL_MS = Math.max(0, envNumber('AMAP_REQUEST_INTERVAL_MS', 500))
+const REQUEST_TIMEOUT_MS = Math.max(1000, envNumber('AMAP_REQUEST_TIMEOUT_MS', 30000))
+
+let lastRequestAt = 0
+
+async function waitForRequestSlot() {
+  const wait = lastRequestAt + REQUEST_INTERVAL_MS - Date.now()
+  if (wait > 0)
+    await new Promise(resolve => setTimeout(resolve, wait))
+  lastRequestAt = Date.now()
 }
 
 /** 城市显示名的精简规则（长后缀去除，特殊政区简称化） */
@@ -60,7 +81,8 @@ async function fetchSubwayData(srhdata, retries = 3) {
 
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      const res = await fetch(url, { headers: HEADERS })
+      await waitForRequestSlot()
+      const res = await fetch(url, { headers: HEADERS, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) })
       if (!res.ok)
         throw new Error(`HTTP ${res.status}`)
       const text = await res.text()
@@ -205,10 +227,67 @@ function diffWithOld(oldCities, newCities) {
   console.log(lines.join('\n') || '  无')
 }
 
+function printFields(label, value) {
+  console.log(`\n${label}:`)
+  for (const [key, field] of Object.entries(value ?? {})) {
+    const text = typeof field === 'string' ? field : JSON.stringify(field)
+    console.log(`  ${key}: ${text.length > 120 ? `${text.slice(0, 120)}…` : text}`)
+  }
+}
+
+async function fetchSingleCity(query) {
+  console.log('抓取城市列表...')
+  const citylist = (await fetchSubwayData('citylist.json')).citylist
+  const normalized = query.toLowerCase()
+  const city = citylist.find(item => item.adcode === query)
+    ?? citylist.find(item => item.spell.toLowerCase() === normalized)
+    ?? citylist.find(item => item.cityname.includes(query))
+    ?? citylist.find(item => shortCityName(item.cityname) === query)
+
+  if (!city)
+    throw new Error(`未找到城市: ${query}`)
+
+  const srhdata = `${city.adcode}_drw_${city.spell}.json`
+  console.log(`抓取 ${city.cityname}（${srhdata}）...`)
+  const raw = await fetchSubwayData(srhdata)
+
+  await mkdir(RAW_CITIES_DIR, { recursive: true })
+  const file = path.join(RAW_CITIES_DIR, `${city.adcode}.json`)
+  await writeFile(file, `${JSON.stringify(raw, null, 2)}\n`)
+
+  const { city: transformed, warnings } = transformCity(raw, city)
+  const totalStations = transformed.lines.reduce((n, line) => n + line.stations.length, 0)
+
+  console.log(`\n===== ${transformed.name} 原始数据 =====`)
+  console.log(`顶层字段: ${Object.keys(raw).join(', ')}`)
+  console.log(`线路: ${transformed.lines.length} 条，站点记录: ${totalStations} 个`)
+  printFields('首条线路字段', raw.l?.[0])
+  printFields('首个站点字段', raw.l?.[0]?.st?.[0])
+
+  if (warnings.length) {
+    console.log(`\n警告 (${warnings.length}):`)
+    warnings.forEach(w => console.log(`  - ${w}`))
+  }
+
+  console.log(`\n原始 JSON: ${path.relative(ROOT, file)}`)
+}
+
 async function main() {
+  const args = process.argv.slice(2)
+  const cityFlagIndex = args.indexOf('--city')
+
+  if (cityFlagIndex >= 0) {
+    const query = args[cityFlagIndex + 1]
+    if (!query)
+      throw new Error('用法: pnpm data:fetch:city <adcode|城市名|拼音>')
+    await fetchSingleCity(query)
+    return
+  }
+
   const started = Date.now()
   await mkdir(CACHE_DIR, { recursive: true })
 
+  console.log(`请求策略: 并发 ${FETCH_CONCURRENCY}，全局间隔 ${REQUEST_INTERVAL_MS}ms（最多约 ${(1000 / Math.max(REQUEST_INTERVAL_MS, 1)).toFixed(1)} 次/秒）`)
   console.log('抓取城市列表...')
   const citylist = (await fetchSubwayData('citylist.json')).citylist
   console.log(`共 ${citylist.length} 个城市`)
@@ -229,7 +308,7 @@ async function main() {
   const allWarnings = []
   let done = 0
 
-  const cities = (await mapWithConcurrency(orderedCitylist, 5, async (city) => {
+  const cities = (await mapWithConcurrency(orderedCitylist, FETCH_CONCURRENCY, async (city) => {
     const srhdata = `${city.adcode}_drw_${city.spell}.json`
     const raw = await fetchSubwayData(srhdata)
     await writeFile(path.join(CACHE_DIR, srhdata), JSON.stringify(raw))
@@ -262,6 +341,8 @@ async function main() {
 
   await writeFile(OUTPUT, `${JSON.stringify(cities, null, 2)}\n`)
   console.log(`\n已写入 ${path.relative(ROOT, OUTPUT)}`)
+
+  await buildData()
 }
 
 main().catch((err) => {

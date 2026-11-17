@@ -11,8 +11,9 @@
     "generate": "node ./pipeline/build-data.mjs && nuxi generate",
     "start:generate": "npx serve .output/public",
     "data:build": "node ./pipeline/build-data.mjs",
-    "data:fetch": "node ./pipeline/fetch-metro-data.mjs && node ./pipeline/build-data.mjs",
-    "data:osm": "node ./pipeline/fetch-osm-geometry.mjs && node ./pipeline/build-data.mjs"
+    "data:fetch": "node ./pipeline/fetch-metro-data.mjs",
+    "data:fetch:city": "node ./pipeline/fetch-metro-data.mjs --city",
+    "data:osm": "node ./pipeline/fetch-osm-geometry.mjs"
   },
   "dependencies": {
     "@deck.gl/core": "^8.9.35",

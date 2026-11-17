@@ -9,3 +9,4 @@ dist
 .env*.local
 .DS_Store
 pipeline/.cache
+pipeline/raw/cities
