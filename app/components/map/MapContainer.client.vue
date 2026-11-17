@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // @ts-expect-error no type provided
 import { MapboxMap } from '@studiometa/vue-mapbox-gl'
+import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import { MapboxOverlay } from '@deck.gl/mapbox/typed'
 import type { LayersList } from '@deck.gl/core/typed'
@@ -8,6 +9,14 @@ import type { Bound, Line } from '~/types'
 import { useInteractorStore } from '~/stores/interactor.store'
 
 const props = defineProps<{ layers?: LayersList }>()
+
+interface MapboxRuntimeConfig {
+  SESSION_PATH?: string
+}
+
+const mapboxConfig = (mapboxgl as unknown as { config: MapboxRuntimeConfig }).config
+Object.defineProperty(mapboxConfig, 'EVENTS_URL', { value: null, configurable: true })
+mapboxConfig.SESSION_PATH = ''
 
 const config = useRuntimeConfig()
 const map = ref()
