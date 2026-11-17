@@ -50,6 +50,7 @@ export default defineNuxtConfig({
 
   nitro: {
     publicAssets: [
+      { dir: join(__dirname, 'public'), baseURL: '/' },
       { dir: join(__dirname, 'data'), baseURL: '/data' },
     ],
     esbuild: {

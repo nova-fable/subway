@@ -73,6 +73,15 @@ pnpm data:build
 
 产物位于 `data/`：`manifest.json`（版本与统计）、`cities.json`（城市目录）、`search.json`（站点搜索索引）、`cities/{adcode}.json`（单城线路与站点）。前端首屏只加载城市目录与默认城市，其余城市在选中时按需请求。
 
+## 部署
+
+站点通过 GitHub Actions 构建静态产物并发布到 GitHub Pages，自定义域名为 `subway.zxinrun.cn`。
+
+- 工作流：`.github/workflows/deploy-pages.yml`，推送 `main` 或手动触发后执行 `pnpm generate` 并部署 `.output/public`
+- 仓库 Settings → Pages → Source 选择 **GitHub Actions**
+- 域名：`public/CNAME` 固定为 `subway.zxinrun.cn`；DNS 的 `subway` 记录需 CNAME 到 `<仓库所有者>.github.io`（本仓库为 `nova-fable.github.io`）
+- 地图样式可通过仓库 Settings → Secrets and variables → Actions → Variables 配置 `MAP_URL` 覆盖，默认使用 CARTO Positron
+
 ## 许可证
 
 MIT License
